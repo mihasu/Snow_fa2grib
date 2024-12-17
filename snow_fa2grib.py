@@ -2,7 +2,6 @@ import os
 import subprocess
 import epygram
 import numpy as np
-import xarray as xr
 import warnings
 from scipy.interpolate import griddata
 
@@ -183,9 +182,8 @@ def read_reference_geometry(reference_grib2_path):
 def process_files(input_directory, climate_fields, reference_geometry):
     for filename in os.listdir(input_directory):
         if filename.startswith("ICMSHHARM+") and filename.endswith(".sfx"):
-            #timestamp = filename.split('+')[1].split('.')[0]
-            fa_file_path = os.path.join(input_directory, filename)
 
+            fa_file_path = os.path.join(input_directory, filename)
             print(f"Processing file: {fa_file_path}")
 
             with epygram.formats.resource(fa_file_path, 'r') as fa:
@@ -199,8 +197,8 @@ def process_files(input_directory, climate_fields, reference_geometry):
                     'h_ice': fa.readfield('SFX.H_ICE').getdata(),
                     **climate_fields
                 }
+
                 timestamp = fa.validity.get().strftime('%Y%m%d%H')
-                print(timestamp)
                 output_fa_file_path = f'snowparams_{timestamp}.fa'
                 output_grib2_tmp_path = f'snowparams_{timestamp}_tmp.grib2'
                 output_grib2_file_path = f'snowparams_{timestamp}.grib2'
