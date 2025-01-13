@@ -1,3 +1,5 @@
+#!/lustre/home/hasu/.conda/envs/epygram/bin/python3
+
 import os
 import subprocess
 import epygram
@@ -8,9 +10,9 @@ from scipy.interpolate import griddata
 warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning)
 
 # Define file paths and directories
-input_directory = '/perm/fibg/BM_model/' 
-climate_file_path = '/perm/fibg/BM_model/Const.Clim.sfx'
-reference_grib2_path = '/perm/fibg/BM_model/reference.grib2'
+input_directory = '/lustre/home/hasu/BM_Model/' 
+climate_file_path = '/lustre/tmp/cooper/harmonie/MEPS_prod/climate/METCOOP25D/Const.Clim.sfx'
+reference_grib2_path = '/lustre/home/hasu/BM_Model/fc2025010812+055grib2_mbr000'
 
 # Define grib keys for new parameters
 fid_snow_depth = {
@@ -43,8 +45,8 @@ fid_ice_fraction = {
 def calculate_fields(fields):
     snow_depth = np.zeros_like(fields['h_snow'])
     snow_fraction = np.zeros_like(fields['h_snow'])
-    ice_fraction = np.full_like(fields['h_ice'], np.nan)
-    inland_ice_frac = np.full_like(fields['h_ice'], np.nan)
+    ice_fraction = np.zeros_like(fields['h_ice'])
+    inland_ice_frac = np.zeros_like(fields['h_ice'])
 
     cond1 = (fields['frac_town'] + fields['frac_sea']) == 1.0
     cond2 = (fields['frac_town'] < 1.0) & (fields['frac_nature'] == 0.0) & (fields['frac_water'] > 0.0)
@@ -73,7 +75,7 @@ def calculate_fields(fields):
 
     cond8 = fields['frac_water'] > 0.0
     cond9 = cond8 & (fields['h_ice'] == 0.0)
-    cond10 = (fields['frac_sea'] + fields['frac_water']) > 0.0
+    cond10 = ((fields['frac_sea'] + fields['frac_water']) > 0.0) & ((fields['frac_sea'] + fields['frac_water']) <= 1.0)
     
     inland_ice_frac[cond9] = 1.0
     inland_ice_frac[cond8 & ~cond9] = 0.0
@@ -81,7 +83,6 @@ def calculate_fields(fields):
         fields['sic'][cond10] * fields['frac_sea'][cond10] +
         inland_ice_frac[cond10] * fields['frac_water'][cond10]
     )
-
     return snow_depth, snow_fraction, ice_fraction
 
 def write_field(output_fa, fa, field_name, data, fid_info):
@@ -139,7 +140,7 @@ def write_output_files(output_fa_path, output_grib2_path, output_grib2_tmp, fiel
     result = subprocess.run(['grib_set', '-s',
                              'latitudeOfFirstGridPointInDegrees=50.319616,'
                              'longitudeOfFirstGridPointInDegrees=0.278280,'
-                             'Latin2=63300001,'
+                             'Latin2=63300000,'
                              'latitudeOfSouthernPoleInDegrees=-90,'
                              'NV=132,'
                              'productDefinitionTemplateNumber=1,'
