@@ -1,4 +1,4 @@
-#!/lustre/home/hasu/.conda/envs/epygram/bin/python3
+#!/lustre/home/hirlam2/.conda/envs/epygram/bin/python3
 
 import os
 import subprocess
@@ -6,13 +6,14 @@ import epygram
 import numpy as np
 import warnings
 from scipy.interpolate import griddata
+import sys
 
 warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning)
 
 # Define file paths and directories
-input_directory = '/lustre/home/hasu/BM_Model/' 
+input_directory = '/lustre/tmp/hirlam2/Snowparams_BMM/metcoop_input/' 
 climate_file_path = '/lustre/tmp/cooper/harmonie/MEPS_prod/climate/METCOOP25D/Const.Clim.sfx'
-reference_grib2_path = '/lustre/home/hasu/BM_Model/fc2025010812+055grib2_mbr000'
+reference_grib2_path = '/lustre/tmp/hirlam2/Snowparams_BMM/metcoop_input/reference_grib2'
 
 # Define grib keys for new parameters
 fid_snow_depth = {
@@ -97,12 +98,9 @@ def resample_field(field_data, source_geometry, target_geometry):
 
     points = np.column_stack((src_lon.ravel(), src_lat.ravel()))
     values = field_data.ravel()
-
     target_points = np.column_stack((tgt_lon.ravel(), tgt_lat.ravel()))
-
     resampled_data = griddata(points, values, target_points, method='linear')
     resampled_data = resampled_data.reshape(tgt_lon.shape)
-
     return np.nan_to_num(resampled_data, nan=0.0)
 
 def write_output_files(output_fa_path, output_grib2_path, output_grib2_tmp, fields, snow_depth, snow_fraction, ice_fraction, ref_geometry, fa):
@@ -119,7 +117,7 @@ def write_output_files(output_fa_path, output_grib2_path, output_grib2_tmp, fiel
             for fieldname in fa_file.listfields():
                 field = fa_file.readfield(fieldname)
                 resampled_data = resample_field(field.getdata(), field.geometry, ref_geometry)
-               
+
                 if fieldname == 'SNOW_DEPTH':
                     new_fid = fid_snow_depth
                 elif fieldname == 'SNOW_FRACTION':
@@ -136,7 +134,6 @@ def write_output_files(output_fa_path, output_grib2_path, output_grib2_tmp, fiel
                 
                 new_field.setdata(resampled_data)
                 grib2_file.writefield(new_field, packing={'packingType': 'grid_ccsds'}, ordering={'jScansPositively': 1})
-    
     result = subprocess.run(['grib_set', '-s',
                              'latitudeOfFirstGridPointInDegrees=50.319616,'
                              'longitudeOfFirstGridPointInDegrees=0.278280,'
@@ -145,7 +142,8 @@ def write_output_files(output_fa_path, output_grib2_path, output_grib2_tmp, fiel
                              'NV=132,'
                              'productDefinitionTemplateNumber=1,'
                              'centre=251,'
-                             'subCentre=255,',
+                             'subCentre=255,'
+                             'generatingProcessIdentifier=0,',
                              output_grib2_tmp, 
                              output_grib2_path],
                             capture_output=True, text=True)
@@ -180,39 +178,42 @@ def read_reference_geometry(reference_grib2_path):
         reference_field = ref_grib2.readfield(fields_list[0])
         return reference_field.geometry
 
-def process_files(input_directory, climate_fields, reference_geometry):
-    for filename in os.listdir(input_directory):
-        if filename.startswith("ICMSHHARM+") and filename.endswith(".sfx"):
+def process_file(fa_file_path, climate_fields, reference_geometry):
+    print(f"Processing file: {fa_file_path}")
 
-            fa_file_path = os.path.join(input_directory, filename)
-            print(f"Processing file: {fa_file_path}")
+    with epygram.formats.resource(fa_file_path, 'r') as fa:
+        fields = {
+            'geometry': fa.geometry,
+            'validity': fa.validity,
+            'h_snow': fa.readfield('SFX.H_SNOW').getdata(),
+            'dsn_t_isba': fa.readfield('SFX.DSN_T_ISBA').getdata(),
+            'psn_isba': fa.readfield('SFX.PSN_ISBA').getdata(),
+            'sic': fa.readfield('SFX.SIC').getdata(),
+            'h_ice': fa.readfield('SFX.H_ICE').getdata(),
+            **climate_fields
+        }
 
-            with epygram.formats.resource(fa_file_path, 'r') as fa:
-                fields = {
-                    'geometry': fa.geometry,
-                    'validity': fa.validity,
-                    'h_snow': fa.readfield('SFX.H_SNOW').getdata(),
-                    'dsn_t_isba': fa.readfield('SFX.DSN_T_ISBA').getdata(),
-                    'psn_isba': fa.readfield('SFX.PSN_ISBA').getdata(),
-                    'sic': fa.readfield('SFX.SIC').getdata(),
-                    'h_ice': fa.readfield('SFX.H_ICE').getdata(),
-                    **climate_fields
-                }
+        timestamp = fa.validity.get().strftime('%Y%m%d%H')
+        output_fa_file_path = f'/lustre/tmp/hirlam2/Snowparams_BMM/out/snowparams_{timestamp}.fa'
+        output_grib2_tmp_path = f'/lustre/tmp/hirlam2/Snowparams_BMM/out/snowparams_{timestamp}_tmp.grib2'
+        output_grib2_file_path = f'/lustre/tmp/hirlam2/Snowparams_BMM/out/snowparams_{timestamp}.grib2'
 
-                timestamp = fa.validity.get().strftime('%Y%m%d%H')
-                output_fa_file_path = f'snowparams_{timestamp}.fa'
-                output_grib2_tmp_path = f'snowparams_{timestamp}_tmp.grib2'
-                output_grib2_file_path = f'snowparams_{timestamp}.grib2'
 
-            snow_depth, snow_fraction, ice_fraction = calculate_fields(fields)
-            write_output_files(output_fa_file_path, output_grib2_file_path, output_grib2_tmp_path, fields, snow_depth, snow_fraction, ice_fraction, reference_geometry, fa)
-            print(f"Output saved to {output_grib2_file_path}")
+    snow_depth, snow_fraction, ice_fraction = calculate_fields(fields)
+    write_output_files(output_fa_file_path, output_grib2_file_path, output_grib2_tmp_path, fields, snow_depth, snow_fraction, ice_fraction, reference_geometry, fa)
+    print(f"Output saved to {output_grib2_file_path}")
 
 if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: snow_fa2grib.py <ICMSHHARM_file_path>")
+        sys.exit(1)
+
+    fa_file_path = sys.argv[1]
+    if not os.path.isfile(fa_file_path):
+        print(f"File not found: {fa_file_path}")
+        sys.exit(1)
+
     climate_fields = read_climate_fields(climate_file_path)
     reference_geometry = read_reference_geometry(reference_grib2_path)
-    process_files(input_directory, climate_fields, reference_geometry)
+    process_file(fa_file_path, climate_fields, reference_geometry)
     print("Processing complete.")
-
-
-
