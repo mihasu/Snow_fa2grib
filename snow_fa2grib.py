@@ -205,7 +205,7 @@ def process_file(fa_file_path, climate_fields, reference_geometry):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: snow_fa2grib.py <ICMSHHARM_file_path>")
+        print("Usage: snow_fa2grib.py <ICMSHSELE_file_path>")
         sys.exit(1)
 
     fa_file_path = sys.argv[1]
